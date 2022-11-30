@@ -29,8 +29,9 @@
  ******************************************************************************************/
 """
 import math
-import numpy as np
 from os.path import splitext
+
+import numpy as np
 
 from .process_camera import ProcessCamera, getCamSensorSize
 from .utility import meter2Degree
@@ -96,11 +97,11 @@ def worldfilesGenerator(task, params):
 
         try:
             altitude = getAltByPriority(img_spec)
-            sw, sh = getCamSensorSize(camobj, img_spec.cam_model, img_spec.image_width, img_spec.image_height)
+            sensor_width, sensor_height = getCamSensorSize(camobj, img_spec.cam_model, img_spec.image_width, img_spec.image_height)
             imgpath_noext, ext = splitext(imgpath)
             worldfile = imgpath_noext + ".{0}{1}{2}".format(ext[1], ext[-1], world_extension).lower()
             createSingleWorldfile(img_spec.image_width, img_spec.image_height,
-                                  img_spec.focal_length, sw, sh,
+                                  img_spec.focal_length, sensor_width, sensor_height,
                                   img_spec.gpslat, img_spec.gpslon, altitude,
                                   img_spec.heading, worldfile)
             loaded_files.append(imgpath)

@@ -28,12 +28,13 @@
  *   Vertical Photo Placer Plugin. If not, see <http://www.gnu.org/licenses/>.            *
  ******************************************************************************************/
 """
+from os.path import dirname, join
+
 import numpy as np
-from os.path import join, dirname
 
 from .process_metadata import *
-from .utility import getDSMValbyCoors
 from .pyexiftool import ExifTool
+from .utility import getDSMValbyCoors
 
 
 class TaskCancelledByUser(Exception):
@@ -80,17 +81,21 @@ def loadPhotosMetadata(task, params):
     :rtype: dict
     """
 
-    photos = params[0]
+    photos_list = []
+    photos_filenames = params[0]
 
     task.setProgress(1)
 
-    imgsmeta = ProcessMetadata(photos).getTagsAllImgs()
+    for photo_filename in photos_filenames:
+        photos_list.append(Photo(photo_filename))
+    #imgsmeta = ProcessMetadata(photos).getTagsAllImgs()
 
     task.setProgress(100)
     if task.isCanceled():
         raise TaskCancelledByUser('Task cancelled!')
 
-    return {'files': photos, 'imgsmeta': imgsmeta, 'task': task.description()}
+#    return {'files': photos, 'imgsmeta': imgsmeta, 'task': task.description()}
+    return {'files': photos, 'imgsmeta': photos_list, 'task': task.description()}
 
 
 def altitudeAdjusterTerrain(task, params):

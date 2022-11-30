@@ -72,12 +72,12 @@
 """
 from __future__ import unicode_literals
 
-import sys
-import subprocess
-import os
-import json
-import warnings
 import codecs
+import json
+import os
+import subprocess
+import sys
+import warnings
 from sys import platform
 
 from .utility import resolveTool

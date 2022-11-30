@@ -30,31 +30,42 @@
 """
 import os.path
 from enum import Enum
+from fileinput import filename
 
-from qgis.core import Qgis, QgsProject, QgsRasterTransparency, QgsTask, QgsApplication, QgsCoordinateReferenceSystem, QgsCoordinateTransform
+from numpy import true_divide
+from qgis.core import (Qgis, QgsApplication, QgsCoordinateReferenceSystem,
+                       QgsCoordinateTransform, QgsProject,
+                       QgsRasterTransparency, QgsTask)
 from qgis.gui import QgsMapToolEmitPoint
-
-from qgis.PyQt.QtCore import QSettings, QTranslator, QCoreApplication, QFileInfo, Qt
+from qgis.PyQt.QtCore import (QCoreApplication, QFileInfo, QSettings, Qt,
+                              QTranslator)
 from qgis.PyQt.QtGui import QIcon, QPixmap
-from qgis.PyQt.QtWidgets import QAction, QFileDialog, QMessageBox, QGraphicsScene, QFrame, QGraphicsPixmapItem
+from qgis.PyQt.QtWidgets import (QAction, QFileDialog, QFrame,
+                                 QGraphicsPixmapItem, QGraphicsScene,
+                                 QMessageBox)
 
+from .model.altitude_adjuster import (altitudeAdjusterAdjacent,
+                                      altitudeAdjusterHome,
+                                      altitudeAdjusterTerrain,
+                                      loadPhotosMetadata)
+from .model.process_camera import ProcessCamera, getCamSensorSize
+from .model.process_metadata import Photo
+from .model.uav_georeference import worldfilesGenerator
+from .model.utility import (computeHomepTerrAltfromAdjPhotosMatching,
+                            getDSMValbyCoors, getGroundsize, getPhotos,
+                            meter2Degree)
 # Initialize Qt resources from file resources.py
 from .resources import *
+from .ui.input_dialog import InputDialog
+from .ui.pixmap_item import PixmapItem
 # Import the code for the dialog
 from .vertical_photo_placer_dialog import VerticalPhotoPlacerDialog
 
-from .model.process_metadata import ProcessMetadata
-from .model.process_camera import ProcessCamera, getCamSensorSize
-from .model.utility import getPhotos, getDSMValbyCoors, getGroundsize, meter2Degree, \
-    computeHomepTerrAltfromAdjPhotosMatching, getWorldfileExistPhotos
-from .model.altitude_adjuster import loadPhotosMetadata, altitudeAdjusterAdjacent, \
-    altitudeAdjusterHome, altitudeAdjusterTerrain
-from .model.uav_georeference import worldfilesGenerator
+# supported file extensions
+IMG_EXTS = (".jpg", ".jpeg", ".jpe", ".jfif", ".jfi", ".jif", ".JPG")
+WORLD_EXT = "w"
 
-from .ui.pixmap_item import PixmapItem
-from .ui.input_dialog import InputDialog
-
-
+    
 # parameters to be used in displaying photos in adjacent photo matching panel
 DISPLAY_RES = 750
 SENSOR_WIDTH = 12
@@ -94,11 +105,17 @@ def showDEMNotSpecified():
                icon_level=QMessageBox.Critical)
 
 
-def showBarometerAltNotFound():
-    showDialog(window_title="Error: Barometer altitude is not found!",
-               dialog_text="Input photos have no barometer altitude. \n"
-                           "Please select Quick view or Simple correction to continue.",
-               icon_level=QMessageBox.Critical)
+def showBarometerAltNotFound(filename = None):
+    if filename :
+        showDialog(window_title="Error: Barometer altitude is not found!",
+                dialog_text=F"{filename} has no barometer altitude. \n"
+                            "Please select Quick view or Simple correction to continue.",
+                icon_level=QMessageBox.Critical)
+    else :
+        showDialog(window_title="Error: Barometer altitude is not found!",
+                dialog_text="Input photos have no barometer altitude. \n"
+                            "Please select Quick view or Simple correction to continue.",
+                icon_level=QMessageBox.Critical)
 
 
 def showHomepointNotSpecified():
@@ -170,10 +187,10 @@ class VerticalPhotoPlacer:
 
         self.workflow_ntasks = None
         self.progress_track = None
+        self.metadata_and_worldfile_done = False
 
-        # supported file extensions
-        self.img_exts = (".jpg", ".jpeg", ".jpe", ".jfif", ".jfi", ".jif")
-        self.world_ext = "w"
+
+        self.photos = []
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -334,18 +351,22 @@ class VerticalPhotoPlacer:
     def onSelectAdjacentPhotos(self):
         """Visualize two photos to the plugin UI so that geometric relationship of the photos are preserved."""
 
-        filename, _filter = QFileDialog.getOpenFileNames(self.dlg, "Select two overlapped photos ",
+        filenames, _filter = QFileDialog.getOpenFileNames(self.dlg, "Select two overlapped photos ",
                                                          self.img_folder,
-                                                         "Images ({0})".format(" ".join(list("*"+i for i in self.img_exts))))
+                                                         "Images ({0})".format(" ".join(list("*"+i for i in IMG_EXTS))))
         self.dlg.progress_bar.setValue(0)
 
-        if len(filename) == 2:
+        if len(filenames) == 2:
             self.adj_scene.clear()
             self.alt_corval = None
-            self.overlap_imgs = filename
+            self.overlap_imgs = filenames
+            
 
             try:
-                specs = ProcessMetadata(self.overlap_imgs).getTagsAllImgs()
+                photo_0 = Photo(filenames[0])
+                photo_1 = Photo(filenames[1])
+                #specs = ProcessMetadata(self.overlap_imgs).getTagsAllImgs()
+                #print(f"photo_0.baroalt {photo_0.baroalt} photo_1.baroalt {photo_0.baroalt}")
 
                 pix1 = QPixmap(self.overlap_imgs[0]).scaled(DISPLAY_RES, DISPLAY_RES, Qt.KeepAspectRatio)
                 pix2 = QPixmap(self.overlap_imgs[1]).scaled(DISPLAY_RES, DISPLAY_RES, Qt.KeepAspectRatio)
@@ -356,32 +377,35 @@ class VerticalPhotoPlacer:
                 self.adj_item1.setTransformOriginPoint(pix1.rect().center())
                 self.adj_item2.setTransformOriginPoint(pix2.rect().center())
 
-                self.adj_item1.setRotation(specs[0].heading)
-                self.adj_item2.setRotation(specs[1].heading)
+                self.adj_item1.setRotation(photo_0.heading)
+                self.adj_item2.setRotation(photo_1.heading)
 
-                diff_lat = specs[0].gpslat - specs[1].gpslat
-                diff_lon = specs[0].gpslon - specs[1].gpslon
+                print(f"self.adj_item1 {self.adj_item1} self.adj_item2 {self.adj_item2}")
+                print(f"photo_0.baroalt {photo_0.baroalt} photo_1.baroalt {photo_0.baroalt}")
 
-                sw, sh = getCamSensorSize(ProcessCamera(), specs[0].cam_model,
-                                          specs[0].image_width, specs[0].image_height)
-                sw, sh = meter2Degree(specs[0].gpslat, sw, sh)
+                diff_lat = photo_0.gpslat - photo_1.gpslat
+                diff_lon = photo_0.gpslon - photo_1.gpslon
+
+                sw, sh = getCamSensorSize(ProcessCamera(), photo_0.cam_model,
+                                          photo_0.image_width, photo_0.image_height)
+                sw, sh = meter2Degree(photo_0.gpslat, sw, sh)
 
                 # set position img 1
-                ground_X1, ground_Y1 = getGroundsize(specs[0].image_width, specs[0].image_height,
+                ground_X1, ground_Y1 = getGroundsize(photo_0.image_width, photo_0.image_height,
                                                      sw, sh,
-                                                     specs[0].focal_length,
-                                                     specs[0].baroalt)
-                ratio = float(DISPLAY_RES / max(specs[0].image_width, specs[0].image_height))
+                                                     photo_0.focal_length,
+                                                     photo_0.baroalt)
+                ratio = float(DISPLAY_RES / max(photo_0.image_width, photo_0.image_height))
                 count_Y = int((diff_lat / ground_Y1)*ratio)
                 count_X = int((diff_lon / ground_X1)*ratio)
                 X_ul, Y_ul = 0, 0
                 self.adj_item1.setPos(X_ul, Y_ul)
 
                 # set position img 2
-                ground_X2, ground_Y2 = getGroundsize(specs[1].image_width, specs[1].image_height,
+                ground_X2, ground_Y2 = getGroundsize(photo_1.image_width, photo_1.image_height,
                                                      sw, sh,
-                                                     specs[1].focal_length,
-                                                     specs[1].baroalt)
+                                                     photo_1.focal_length,
+                                                     photo_1.baroalt)
                 self.adj_scaleX2 = float(ground_X2/ground_X1)
                 self.adj_item2.setScale(self.adj_scaleX2)
                 X_ul, Y_ul = -count_X, count_Y
@@ -390,13 +414,13 @@ class VerticalPhotoPlacer:
                 self.adj_scene.addItem(self.adj_item1)
                 self.adj_scene.addItem(self.adj_item2)
 
-                self.adj_img1_spec = specs[0]
+                self.adj_img1_spec = photo_0
                 self.adj_img1_spec.sensor_width = sw
                 self.adj_img1_spec.sensor_height = sh
                 self.adj_img1_spec.diff_lat = diff_lat
                 self.adj_img1_spec.diff_lon = diff_lon
 
-                self.adj_img2_spec = specs[1]
+                self.adj_img2_spec = photo_1
 
                 # shrink QGraphicScene to items
                 self.adj_scene.setSceneRect(self.adj_scene.itemsBoundingRect())
@@ -418,6 +442,8 @@ class VerticalPhotoPlacer:
         self.adj_img1_spec = None
         self.alt_corval = None
         self.overlap_imgs = [None, None]
+        self.photos = []
+        self.metadata_and_worldfile_done = False
 
     def onSelectAltCorrMethod(self):
         method_index = self.dlg.alt_corr_method.currentIndex()
@@ -561,22 +587,32 @@ class VerticalPhotoPlacer:
                        icon_level=QMessageBox.Critical)
             return
 
-        photos = getPhotos(self.img_folder, self.img_exts)
-        if not photos:
-            self.iface.messageBar().pushMessage("Notice", "No photo found!", level=Qgis.Info, duration=5)
+        self.photos_filenames = getPhotos(self.img_folder, IMG_EXTS)
+        if not self.photos_filenames:
+            self.iface.messageBar().pushMessage("Notice", F"No photo found in {self.img_folder}", level=Qgis.Info, duration=5)
             return
+
+        # Get metadata and write worldfile for every photo if needed
+        if not self.metadata_and_worldfile_done :
+            self.metadata_and_worldfile()
+
+
 
         method_index = self.dlg.alt_corr_method.currentIndex()
         if method_index == 0:
-            self.quickView(photos)
+            self.quickView()
         elif method_index == 1:
-            self.homepointCorrectionView(photos)
+            self.homepointCorrectionView(self.photos_filenames)
         elif method_index == 2:
-            self.adjacentPhotoMatchingView(photos)
+            self.adjacentPhotoMatchingView(self.photos_filenames)
         else:
-            self.simpleCorrectionView(photos)
+            self.simpleCorrectionView(self.photos_filenames)
 
     def setupProgressTrackingWf(self, n_tasks):
+        """ Return an array of n_tasks which divide 100
+        ex with n_task = 5 setupProgressTrackingWf return
+         [0.0, 20.0, 40.0, 60.0, 80.0]
+        """
         self.workflow_ntasks = n_tasks
         self.progress_track = [(i * 100) / self.workflow_ntasks for i in range(self.workflow_ntasks)]
 
@@ -601,16 +637,34 @@ class VerticalPhotoPlacer:
             int(start_progress + self.alt_task.progress()/self.workflow_ntasks)))
         QgsApplication.taskManager().addTask(self.alt_task)
 
-    def quickView(self, photos):
+    def quickView(self):
         self.iface.messageBar().pushMessage("Info", "Performs quick view!", level=Qgis.Info, duration=5)
+
+        # 2 tasks to do for quickview ?
         self.setupProgressTrackingWf(CountTasks.QUICKVIEW.value)
-        photo_with_worldfile = getWorldfileExistPhotos(photos, self.world_ext)
-        if photo_with_worldfile:
-            inputs = {'files': photo_with_worldfile, 'task': None}
-            self.dlg.progress_bar.setValue(100)
-            self.onCreateWorldfileCompleted(exception=None, result=inputs)
-        else:
-            self.loadPhotosMetadataTask(photos, self.createWorldfile)
+        inputs = {'task': None}
+        self.dlg.progress_bar.setValue(100)
+        self.onCreateWorldfileCompleted(exception=None, result=inputs)
+
+
+    def metadata_and_worldfile(self):
+        """ Get metadata and creates worldfiles for every photo
+        """
+        self.iface.messageBar().pushMessage("Info", "Get metadata and creates worldfiles for every photo", level=Qgis.Info, duration=5)
+        self.setupProgressTrackingWf(CountTasks.QUICKVIEW.value)
+        
+        #task.setProgress(1)
+        n_processed = 0
+
+        # Create Photo object for each filename and append to  self.photo
+
+        for photo_filename in self.photos_filenames:
+            temp_photo = Photo(photo_filename)
+            # Get metadata and create Worlfile
+            temp_photo.get_metadata()
+            self.photos.append(temp_photo)
+
+        self.metadata_and_worldfile_done = True
 
     def simpleCorrectionView(self, photos):
         if not os.path.isfile(self.dem_path):
@@ -642,8 +696,9 @@ class VerticalPhotoPlacer:
         self.loadPhotosMetadataTask(photos, altitudeAdjusterTerrainTask)
 
     def homepointCorrectionView(self, photos):
-        if not ProcessMetadata([photos[0]]).hasBaroAltitude():
-            showBarometerAltNotFound()
+        ## Only test first image...
+        if not Photo([photos[0]]).hasBaroAltitude():
+            showBarometerAltNotFound(photos[0])
             return
 
         if not os.path.isfile(self.dem_path):
@@ -683,7 +738,7 @@ class VerticalPhotoPlacer:
         self.loadPhotosMetadataTask(photos, altitudeAdjusterHomeTask)
 
     def adjacentPhotoMatchingView(self, photos):
-        if not ProcessMetadata([photos[0]]).hasBaroAltitude():
+        if not Photo([photos[0]]).baroalt:
             showBarometerAltNotFound()
             return
 
@@ -755,7 +810,7 @@ class VerticalPhotoPlacer:
             imgsmeta = result["imgsmeta"]
             self.alt_task = QgsTask.fromFunction('Generate worldfile',
                                                  worldfilesGenerator,
-                                                 params=[files, imgsmeta, self.world_ext],
+                                                 params=[files, imgsmeta, WORLD_EXT],
                                                  on_finished=self.onCreateWorldfileCompleted)
             self.alt_task.progressChanged.connect(lambda: self.dlg.progress_bar.setValue(
                 int(start_progress + self.alt_task.progress()/self.workflow_ntasks)))
@@ -785,21 +840,21 @@ class VerticalPhotoPlacer:
         """
 
         if exception is None:
-            VerticalPhotoPlacer.removeDupLayers(result["files"])
+            self.removeDupLayers()
             self.loadBasemap()
-            self.loadLayers(result["files"])
+            self.loadLayers()
         else:
             self.iface.messageBar().pushMessage("Notice", str(exception), level=Qgis.Info, duration=5)
 
-    @staticmethod
-    def removeDupLayers(files):
+    def removeDupLayers(self):
         """Remove duplicated layers on canvas that have the same source data.
 
         :param files: Fullpath list of source data to compare.
         :type files: list
         """
 
-        files = [os.path.realpath(f) for f in files]
+        files = [photo.path for photo in self.photos]
+
         selected_layer = QgsProject.instance().mapLayers().values()
         for layer in selected_layer:
             if os.path.realpath(layer.source()) in files:
@@ -808,14 +863,14 @@ class VerticalPhotoPlacer:
                 except Exception:
                     continue
 
-    def loadLayers(self, images):
+    def loadLayers(self):
         """Load photos as raster layers.
 
         :param images: Fullpath list of photos.
         :type images: list
         """
 
-        if images is None:
+        if self.photos is None:
             self.iface.messageBar().pushMessage("Notice",
                                                 "No valid vertical photo found in the selected photos/folder",
                                                 level=Qgis.Info,
@@ -829,15 +884,15 @@ class VerticalPhotoPlacer:
             s.setValue("/Projections/defaultBehaviour", "useProject")
 
             first_img = None
-            count = 0
-            for img in images:
-                status = self.loadGeotagImage(img)
+        
+            for count, photo in enumerate(self.photos):
+                status = self.loadGeotagImage(photo.path)
                 if status:
                     self.iface.messageBar().clearWidgets()
-                    count = count + 1
                     if first_img is None:
-                        first_img = img
-
+                        first_img = photo
+                else :
+                    count = count - 1
             self.zoomLayer(first_img)
             self.iface.messageBar().pushMessage("Success", "Loaded {0} photos".format(count),
                                                 level=Qgis.Success,
@@ -866,11 +921,11 @@ class VerticalPhotoPlacer:
                                                     duration=3)
                 return
 
-    def loadGeotagImage(self, imgname):
+    def loadGeotagImage(self, photo_filename):
         """Load a photo as raster layer.
 
-        :param imgname: Fullpath of the photo.
-        :type imgname: string
+        :param photo_filename: Fullpath of the photo.
+        :type photo_filename: string
 
         :return: success code
         :rtype: int
@@ -879,20 +934,20 @@ class VerticalPhotoPlacer:
         try:
             rt = QgsRasterTransparency()
             rt.initializeTransparentPixelList(0, 0, 0)
-            file_info = QFileInfo(imgname)
+            file_info = QFileInfo(photo_filename)
             fbasename = file_info.baseName()
-            rlayer = self.iface.addRasterLayer(imgname, fbasename)
+            rlayer = self.iface.addRasterLayer(photo_filename, fbasename)
             crs = rlayer.crs()
             crs.createFromId(4326)
             rlayer.setCrs(crs)
             rlayer.renderer().setRasterTransparency(rt)
 
             if not rlayer.isValid():
-                raise InvalidRasterLayer("Cannot load {0}.".format(imgname))
+                raise InvalidRasterLayer("Cannot load {0}.".format(photo_filename))
 
         except Exception:
             self.iface.messageBar().pushMessage("Notice",
-                                                "ERROR: Photo {0} failed to load".format(imgname),
+                                                "ERROR: Photo {0} failed to load".format(photo_filename),
                                                 level=Qgis.Info,
                                                 duration=5)
             return False

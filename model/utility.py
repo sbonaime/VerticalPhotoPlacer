@@ -28,11 +28,13 @@
  *   Vertical Photo Placer Plugin. If not, see <http://www.gnu.org/licenses/>.            *
  ******************************************************************************************/
 """
-from os import listdir
-from os.path import isfile, join, exists, realpath, dirname, splitext
-import shutil
-from osgeo import gdal
 import math
+import shutil
+from glob import glob
+from os import listdir
+from os.path import dirname, exists, isfile, join, realpath, splitext
+
+from osgeo import gdal
 
 
 class ReferenceDirectionTextNotFound(Exception):
@@ -60,29 +62,6 @@ def refConversion(coor, direction):
                                              "but found '{1}' instead.".format(direction_mult.keys(), direction))
 
 
-def getWorldfileExistPhotos(photos, world_ext):
-    """
-    :param photos: list of filepaths of photos.
-    :type photos: list
-
-    :param world_ext: extension of worldfiles.
-    :type world_ext: string
-
-    :return: list of photos that has worldfile.
-    :rtype: list
-    """
-
-    has_worldfile = []
-    n_files = len(photos)
-    for i in range(0, n_files):
-        imgpath_noext, ext = splitext(photos[i])
-        wf = imgpath_noext + ".{0}{1}{2}".format(ext[1], ext[-1], world_ext).lower()
-        if isfile(wf):
-            has_worldfile.append(i)
-
-    ok_photos = [photos[i] for i in has_worldfile]
-
-    return ok_photos
 
 
 def getGroundsize(iw, ih, sw, sh, fl, altitude):
@@ -110,12 +89,15 @@ def resolveFile(name):
     return join(basepath, name)
 
 
+
+
 def getPhotos(folder, exts=('.jpg')):
     """Get all photos with extensions inside a folder."""
     folder = str(folder)
     imgs = []
+
     if exists(folder):
-        imgs = [join(folder, f) for f in listdir(folder) if (isfile(join(folder, f)) and f.lower().endswith(exts))]
+        imgs = [ file for file in glob(folder+'/*') if file.endswith(exts)]
         
     return imgs
 
