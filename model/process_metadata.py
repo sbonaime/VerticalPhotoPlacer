@@ -160,6 +160,8 @@ def createWorldfile(photo):
         D = -(sin(radians(photo.heading)) * ground_pixel_width)
         E = -(cos(radians(photo.heading)) * ground_pixel_length)
 
+        print(f'ground_pixel_width {ground_pixel_width} photo.heading {photo.heading} A {A} scale_factor {scale_factor}')
+
         world_content = list()
         world_content.append(A)
         world_content.append(B)
