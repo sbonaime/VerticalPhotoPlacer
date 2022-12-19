@@ -33,37 +33,10 @@ from os.path import splitext
 
 import numpy as np
 
-from .process_camera import ProcessCamera, getCamSensorSize
 from .utility import meter2Degree
-
 
 class AltitudeNotFound(Exception):
     pass
-
-
-def getAltByPriority(img_spec):
-    """Get altitude value, priority: Ground Altitude > Barometer Altitude > GPS Altitude
-
-    :param img_spec: object storing metadata tags of a photo.
-    :type img_spec: ImageMetaStore
-
-    :return: altitude value.
-    :rtype: float
-    """
-
-    try:
-        # determine altitude value, priority: Ground Altitude > Barometer Altitude > GPS Altitude
-        if img_spec.groundalt is not None:
-            altitude = img_spec.groundalt
-        elif img_spec.baroalt is not None:
-            altitude = img_spec.baroalt
-        elif img_spec.gpsalt is not None:
-            altitude = img_spec.gpsalt
-
-        return altitude
-
-    except Exception:
-        raise AltitudeNotFound("Either the input object is None type or it has no altitude information.")
 
 
 def worldfilesGenerator(task, params):
@@ -73,38 +46,38 @@ def worldfilesGenerator(task, params):
     :param task: task object automatically passed by calling function.
 
     :param params: list of parameters, containing:
-        files: list of photo filepaths
-        imgsmeta: list of ImageMetaStore objects for each photo
-        world_ext: string, extension of worldfiles to be created
+        files: list of photo 
 
     :return: list of processed photos and summary of task
     :rtype: dict
     """
 
-    files = params[0]
-    imgsmeta = params[1]
-    world_extension = params[2]
-
+    # files = params[0]
+    # imgsmeta = params[1]
+    # world_extension = params[2]
+    
+    photos = params[0]
+    n_photos = len(photos)
     task.setProgress(1)
 
     # start creation of worldfiles
-    camobj = ProcessCamera()
-    n_photos = len(files)
     loaded_files = list()
     n_processed = 0
 
-    for imgpath, img_spec in zip(files, imgsmeta):
+    for photo in photo:
 
         try:
-            altitude = getAltByPriority(img_spec)
-            sensor_width, sensor_height = getCamSensorSize(camobj, img_spec.cam_model, img_spec.image_width, img_spec.image_height)
-            imgpath_noext, ext = splitext(imgpath)
-            worldfile = imgpath_noext + ".{0}{1}{2}".format(ext[1], ext[-1], world_extension).lower()
-            createSingleWorldfile(img_spec.image_width, img_spec.image_height,
-                                  img_spec.focal_length, sensor_width, sensor_height,
-                                  img_spec.gpslat, img_spec.gpslon, altitude,
-                                  img_spec.heading, worldfile)
-            loaded_files.append(imgpath)
+            altitude = photo.getAltByPriority()
+     
+            
+            
+            imgpath_noext, ext = splitext(photo.imgpath)
+            worldfile = imgpath_noext + ".{0}{1}{2}".format(ext[1], ext[-1], "w").lower()
+            createSingleWorldfile(photo.sensor_width_decimal, photo.sensor_height_decimal,
+                                  photo.focal_length, photo.sensor_width, photo.sensor_height,
+                                  photo.gpslat, photo.gpslon, altitude,
+                                  photo.heading, worldfile)
+            loaded_files.append(photo)
         except Exception:
             continue
 
@@ -125,37 +98,26 @@ def worldfilesGenerator(task, params):
 
 def createSingleWorldfile(iw, ih, fl, sw, sh, lat, lon, groundalt, heading, worldfile):
     """Create a worldfile for a photo.
-
     :param iw: image width in pixel
     :type iw: int
-
     :param ih: image height in pixel
     :type ih: int
-
     :param fl: camera focal lenght in meter unit
     :type fl: float
-
     :param sw: camera sensor width in decimal unit (WGS84)
     :type sw: float
-
     :param sh: camera sensor height in degree unit (WGS84)
     :type sh: float
-
     :param lat: GPS latitude in decimal unit (WGS84)
     :type lat: float
-
     :param lon: GPS longitude in decimal unit (WGS84)
     :type lon: float
-
     :param groundalt: ground altitude in meter unit
     :type groundalt: float
-
     :param heading: heading angle (Flight Yaw Degree)
     :type heading: float
-
     :param worldfile: name of the output world file
     :type worldfile: string
-
     :return: status
     :rtype: boolean
     """

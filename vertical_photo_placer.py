@@ -48,7 +48,6 @@ from .model.altitude_adjuster import (altitudeAdjusterAdjacent,
                                       altitudeAdjusterHome,
                                       altitudeAdjusterTerrain,
                                       loadPhotosMetadata)
-from .model.process_camera import ProcessCamera, getCamSensorSize
 from .model.process_metadata import Photo
 from .model.uav_georeference import worldfilesGenerator
 from .model.utility import (computeHomepTerrAltfromAdjPhotosMatching,
@@ -63,7 +62,6 @@ from .vertical_photo_placer_dialog import VerticalPhotoPlacerDialog
 
 # supported file extensions
 IMG_EXTS = (".jpg", ".jpeg", ".jpe", ".jfif", ".jfi", ".jif", ".JPG")
-WORLD_EXT = "w"
 
     
 # parameters to be used in displaying photos in adjacent photo matching panel
@@ -178,10 +176,11 @@ class VerticalPhotoPlacer:
         self.overlap_imgs = [None, None]
         self.alt_corval = None
         self.adj_scene = QGraphicsScene()
+        self.photo_1 = None
+        self.photo_2 = None
         self.adj_item1 = None
         self.adj_item2 = None
-        self.adj_img1_spec = None
-        self.adj_img2_spec = None
+
         self.adj_scaleX2 = None
         self.alt_task = None
 
@@ -360,16 +359,19 @@ class VerticalPhotoPlacer:
             self.adj_scene.clear()
             self.alt_corval = None
             self.overlap_imgs = filenames
-            
 
             try:
-                photo_0 = Photo(filenames[0])
-                photo_1 = Photo(filenames[1])
-                #specs = ProcessMetadata(self.overlap_imgs).getTagsAllImgs()
-                #print(f"photo_0.baroalt {photo_0.baroalt} photo_1.baroalt {photo_0.baroalt}")
+                photo_1 = Photo(filenames[0])
+                photo_2 = Photo(filenames[1])
+                photo_1.get_metadata()
+                photo_2.get_metadata()
 
-                pix1 = QPixmap(self.overlap_imgs[0]).scaled(DISPLAY_RES, DISPLAY_RES, Qt.KeepAspectRatio)
-                pix2 = QPixmap(self.overlap_imgs[1]).scaled(DISPLAY_RES, DISPLAY_RES, Qt.KeepAspectRatio)
+                print(photo_1)
+                print(photo_2)
+
+
+                pix1 = QPixmap(photo_1.path).scaled(DISPLAY_RES, DISPLAY_RES, Qt.KeepAspectRatio)
+                pix2 = QPixmap(photo_2.path).scaled(DISPLAY_RES, DISPLAY_RES, Qt.KeepAspectRatio)
 
                 self.adj_item1 = PixmapItem(pix1)
                 self.adj_item2 = PixmapItem(pix2)
@@ -377,54 +379,53 @@ class VerticalPhotoPlacer:
                 self.adj_item1.setTransformOriginPoint(pix1.rect().center())
                 self.adj_item2.setTransformOriginPoint(pix2.rect().center())
 
-                self.adj_item1.setRotation(photo_0.heading)
-                self.adj_item2.setRotation(photo_1.heading)
+                self.adj_item1.setRotation(photo_1.heading)
+                self.adj_item2.setRotation(photo_2.heading)
 
-                print(f"self.adj_item1 {self.adj_item1} self.adj_item2 {self.adj_item2}")
-                print(f"photo_0.baroalt {photo_0.baroalt} photo_1.baroalt {photo_0.baroalt}")
 
-                diff_lat = photo_0.gpslat - photo_1.gpslat
-                diff_lon = photo_0.gpslon - photo_1.gpslon
-
-                sw, sh = getCamSensorSize(ProcessCamera(), photo_0.cam_model,
-                                          photo_0.image_width, photo_0.image_height)
-                sw, sh = meter2Degree(photo_0.gpslat, sw, sh)
+                diff_lat = photo_1.gpslat - photo_2.gpslat
+                diff_lon = photo_1.gpslon - photo_2.gpslon
+                sw, sh =  photo_1.sensor_width_degree, photo_1.sensor_height_degree
 
                 # set position img 1
-                ground_X1, ground_Y1 = getGroundsize(photo_0.image_width, photo_0.image_height,
-                                                     sw, sh,
-                                                     photo_0.focal_length,
-                                                     photo_0.baroalt)
-                ratio = float(DISPLAY_RES / max(photo_0.image_width, photo_0.image_height))
-                count_Y = int((diff_lat / ground_Y1)*ratio)
-                count_X = int((diff_lon / ground_X1)*ratio)
-                X_ul, Y_ul = 0, 0
-                self.adj_item1.setPos(X_ul, Y_ul)
-
-                # set position img 2
-                ground_X2, ground_Y2 = getGroundsize(photo_1.image_width, photo_1.image_height,
+                ground_X1, ground_Y1 = getGroundsize(photo_1.image_width, photo_1.image_height,
                                                      sw, sh,
                                                      photo_1.focal_length,
                                                      photo_1.baroalt)
+                print("poulpe_2")
+
+                ratio = float(DISPLAY_RES / max(photo_1.image_width, photo_1.image_height))
+                count_Y = int((diff_lat / ground_Y1)*ratio)
+                count_X = int((diff_lon / ground_X1)*ratio)
+                print("poulpe_3")
+
+                X_ul, Y_ul = 0, 0
+                self.adj_item1.setPos(X_ul, Y_ul)
+                print("poulpe_4")
+
+                # set position img 2
+                ground_X2, ground_Y2 = getGroundsize(photo_2.image_width, photo_2.image_height,
+                                                     sw, sh,
+                                                     photo_2.focal_length,
+                                                     photo_2.baroalt)
                 self.adj_scaleX2 = float(ground_X2/ground_X1)
                 self.adj_item2.setScale(self.adj_scaleX2)
                 X_ul, Y_ul = -count_X, count_Y
                 self.adj_item2.setPos(X_ul, Y_ul)
+                print("poulpe_5")
 
                 self.adj_scene.addItem(self.adj_item1)
                 self.adj_scene.addItem(self.adj_item2)
 
-                self.adj_img1_spec = photo_0
-                self.adj_img1_spec.sensor_width = sw
-                self.adj_img1_spec.sensor_height = sh
-                self.adj_img1_spec.diff_lat = diff_lat
-                self.adj_img1_spec.diff_lon = diff_lon
 
-                self.adj_img2_spec = photo_1
+                self.photo_1 = photo_1
+                self.photo_2 = photo_2
 
+                self.photo_1.diff_lat = diff_lat
+                self.photo_1.diff_lon = diff_lon
                 # shrink QGraphicScene to items
                 self.adj_scene.setSceneRect(self.adj_scene.itemsBoundingRect())
-
+                
             except Exception:
                 self.iface.messageBar().pushMessage("Notice",
                                                     "Please check if the photos contain heading "
@@ -439,7 +440,8 @@ class VerticalPhotoPlacer:
         self.adj_item1 = None
         self.adj_item2 = None
         self.adj_scaleX2 = None
-        self.adj_img1_spec = None
+        self.photo_1 = None
+        self.photo_2 = None
         self.alt_corval = None
         self.overlap_imgs = [None, None]
         self.photos = []
@@ -543,17 +545,17 @@ class VerticalPhotoPlacer:
         :param altval: Altitude offset change.
         :type altval: float
         """
+        ground_X1, ground_Y1 = getGroundsize(self.photo_1.image_width,
+                                              self.photo_1.image_height,
+                                              self.photo_1.sensor_width_degree,
+                                              self.photo_1.sensor_height_degree,
+                                              self.photo_1.focal_length,
+                                              self.photo_1.baroalt + altval)
 
-        ground_X1, ground_Y1 = getGroundsize(self.adj_img1_spec.image_width,
-                                              self.adj_img1_spec.image_height,
-                                              self.adj_img1_spec.sensor_width,
-                                              self.adj_img1_spec.sensor_height,
-                                              self.adj_img1_spec.focal_length,
-                                              self.adj_img1_spec.baroalt + altval)
-        ratio = float(DISPLAY_RES / max(self.adj_img1_spec.image_width,
-                                        self.adj_img1_spec.image_height))
-        count_Y = int((self.adj_img1_spec.diff_lat / ground_Y1)*ratio)
-        count_X = int((self.adj_img1_spec.diff_lon / ground_X1)*ratio)
+        ratio = float(DISPLAY_RES / max(self.photo_1.image_width,
+                                        self.photo_1.image_height))
+        count_Y = int((self.photo_1.diff_lat / ground_Y1)*ratio)
+        count_X = int((self.photo_1.diff_lon / ground_X1)*ratio)
         self.adj_item2.setPos(-count_X, count_Y)
 
     def onCancel(self):
@@ -593,6 +595,8 @@ class VerticalPhotoPlacer:
             return
 
         # Get metadata and write worldfile for every photo if needed
+        # il faudrait utiliser    def loadPhotosMetadataTask(self,  callback):
+        #avec un callback ???
         if not self.metadata_and_worldfile_done :
             self.metadata_and_worldfile()
 
@@ -602,11 +606,11 @@ class VerticalPhotoPlacer:
         if method_index == 0:
             self.quickView()
         elif method_index == 1:
-            self.homepointCorrectionView(self.photos_filenames)
+            self.homepointCorrectionView()
         elif method_index == 2:
-            self.adjacentPhotoMatchingView(self.photos_filenames)
+            self.adjacentPhotoMatchingView()
         else:
-            self.simpleCorrectionView(self.photos_filenames)
+            self.simpleCorrectionView()
 
     def setupProgressTrackingWf(self, n_tasks):
         """ Return an array of n_tasks which divide 100
@@ -616,7 +620,7 @@ class VerticalPhotoPlacer:
         self.workflow_ntasks = n_tasks
         self.progress_track = [(i * 100) / self.workflow_ntasks for i in range(self.workflow_ntasks)]
 
-    def loadPhotosMetadataTask(self, photos, callback):
+    def loadPhotosMetadataTask(self,  callback):
         """Loads metadata from photos.
         This uses Pyexiftool.
         This can be a long-running task when a large number of photos are loaded.
@@ -630,7 +634,7 @@ class VerticalPhotoPlacer:
         start_progress = self.progress_track[0]
         self.alt_task = QgsTask.fromFunction('Load photos metadata',
                                              loadPhotosMetadata,
-                                             params=[photos],
+                                             params=[],
                                              on_finished=callback,
                                              flags=QgsTask.CanCancel)
         self.alt_task.progressChanged.connect(lambda: self.dlg.progress_bar.setValue(
@@ -666,7 +670,7 @@ class VerticalPhotoPlacer:
 
         self.metadata_and_worldfile_done = True
 
-    def simpleCorrectionView(self, photos):
+    def simpleCorrectionView(self):
         if not os.path.isfile(self.dem_path):
             showDEMNotSpecified()
             return
@@ -693,11 +697,11 @@ class VerticalPhotoPlacer:
         # start from loading photos metadata
         self.iface.messageBar().pushMessage("Info", "Performs Simple correction and View!", level=Qgis.Info, duration=5)
         self.setupProgressTrackingWf(CountTasks.SIMPLE.value)
-        self.loadPhotosMetadataTask(photos, altitudeAdjusterTerrainTask)
+        self.loadPhotosMetadataTask( altitudeAdjusterTerrainTask)
 
-    def homepointCorrectionView(self, photos):
+    def homepointCorrectionView(self ):
         ## Only test first image...
-        if not Photo([photos[0]]).hasBaroAltitude():
+        if not self.photos[0].baroalt:
             showBarometerAltNotFound(photos[0])
             return
 
@@ -735,10 +739,12 @@ class VerticalPhotoPlacer:
         # start from loading photos metadata
         self.iface.messageBar().pushMessage("Info", "Performs Homepoint correction and View!", level=Qgis.Info, duration=5)
         self.setupProgressTrackingWf(CountTasks.HOMEPOINT.value)
-        self.loadPhotosMetadataTask(photos, altitudeAdjusterHomeTask)
+        self.loadPhotosMetadataTask( altitudeAdjusterHomeTask)
 
-    def adjacentPhotoMatchingView(self, photos):
-        if not Photo([photos[0]]).baroalt:
+    def adjacentPhotoMatchingView(self ):
+#        if not Photo([photos[0]]).baroalt:
+        #print(f"self.photos[0] {self.photos[0].__dict__}")
+        if not self.photos[0].baroalt:
             showBarometerAltNotFound()
             return
 
@@ -749,8 +755,8 @@ class VerticalPhotoPlacer:
         # parameters to be used in altitudeAdjusterHomeTask
         home_terrain_alt, adj_terrain_alt_avg = \
             computeHomepTerrAltfromAdjPhotosMatching(self.dem_path,
-                                                     [self.adj_img1_spec.gpslon, self.adj_img1_spec.gpslat],
-                                                     [self.adj_img2_spec.gpslon, self.adj_img2_spec.gpslat],
+                                                     [self.photo_1.gpslon, self.photo_1.gpslat],
+                                                     [self.photo_2.gpslon, self.photo_2.gpslat],
                                                      self.alt_corval)
 
         def altitudeAdjusterAdjacentTask(exception, result=None):
@@ -771,8 +777,7 @@ class VerticalPhotoPlacer:
                                                     duration=5)
                 self.alt_task = QgsTask.fromFunction('Adjust altitude based on photos matching',
                                                      altitudeAdjusterAdjacent,
-                                                     params=[files,
-                                                             imgsmeta,
+                                                     params=[self.photos,
                                                              home_terrain_alt,
                                                              adj_terrain_alt_avg,
                                                              self.dem_path],
@@ -785,7 +790,7 @@ class VerticalPhotoPlacer:
         self.iface.messageBar().pushMessage("Info", "Performs Adjacent photos matching and View!", level=Qgis.Info,
                                             duration=5)
         self.setupProgressTrackingWf(CountTasks.ADJMATCHING.value)
-        self.loadPhotosMetadataTask(photos, altitudeAdjusterAdjacentTask)
+        self.loadPhotosMetadataTask(altitudeAdjusterAdjacentTask)
 
     def createWorldfile(self, exception, result=None):
         """Generate worldfile for each input photo.
