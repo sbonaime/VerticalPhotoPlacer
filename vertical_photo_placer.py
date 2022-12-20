@@ -187,8 +187,7 @@ class VerticalPhotoPlacer:
         self.workflow_ntasks = None
         self.progress_track = None
         self.metadata_and_worldfile_done = False
-
-
+        # List for all photo objects
         self.photos = []
 
     # noinspection PyMethodMayBeStatic
@@ -366,10 +365,6 @@ class VerticalPhotoPlacer:
                 photo_1.get_metadata()
                 photo_2.get_metadata()
 
-                print(photo_1)
-                print(photo_2)
-
-
                 pix1 = QPixmap(photo_1.path).scaled(DISPLAY_RES, DISPLAY_RES, Qt.KeepAspectRatio)
                 pix2 = QPixmap(photo_2.path).scaled(DISPLAY_RES, DISPLAY_RES, Qt.KeepAspectRatio)
 
@@ -392,16 +387,13 @@ class VerticalPhotoPlacer:
                                                      sw, sh,
                                                      photo_1.focal_length,
                                                      photo_1.baroalt)
-                print("poulpe_2")
 
                 ratio = float(DISPLAY_RES / max(photo_1.image_width, photo_1.image_height))
                 count_Y = int((diff_lat / ground_Y1)*ratio)
                 count_X = int((diff_lon / ground_X1)*ratio)
-                print("poulpe_3")
 
                 X_ul, Y_ul = 0, 0
                 self.adj_item1.setPos(X_ul, Y_ul)
-                print("poulpe_4")
 
                 # set position img 2
                 ground_X2, ground_Y2 = getGroundsize(photo_2.image_width, photo_2.image_height,
@@ -412,7 +404,6 @@ class VerticalPhotoPlacer:
                 self.adj_item2.setScale(self.adj_scaleX2)
                 X_ul, Y_ul = -count_X, count_Y
                 self.adj_item2.setPos(X_ul, Y_ul)
-                print("poulpe_5")
 
                 self.adj_scene.addItem(self.adj_item1)
                 self.adj_scene.addItem(self.adj_item2)
@@ -634,7 +625,7 @@ class VerticalPhotoPlacer:
         start_progress = self.progress_track[0]
         self.alt_task = QgsTask.fromFunction('Load photos metadata',
                                              loadPhotosMetadata,
-                                             params=[],
+                                             params=[self.photos_filenames],
                                              on_finished=callback,
                                              flags=QgsTask.CanCancel)
         self.alt_task.progressChanged.connect(lambda: self.dlg.progress_bar.setValue(
@@ -669,7 +660,7 @@ class VerticalPhotoPlacer:
             self.photos.append(temp_photo)
 
         self.metadata_and_worldfile_done = True
-
+        
     def simpleCorrectionView(self):
         if not os.path.isfile(self.dem_path):
             showDEMNotSpecified()
@@ -688,7 +679,7 @@ class VerticalPhotoPlacer:
                 imgsmeta = result["imgsmeta"]
                 self.alt_task = QgsTask.fromFunction('Adjust GPS altitude based on terrain height substraction',
                                                      altitudeAdjusterTerrain,
-                                                     params=[files, imgsmeta, self.dem_path],
+                                                     params=[self.photos, self.dem_path],
                                                      on_finished=self.createWorldfile)
                 self.alt_task.progressChanged.connect(lambda: self.dlg.progress_bar.setValue(
                     int(start_progress + self.alt_task.progress() / self.workflow_ntasks)))
@@ -697,12 +688,13 @@ class VerticalPhotoPlacer:
         # start from loading photos metadata
         self.iface.messageBar().pushMessage("Info", "Performs Simple correction and View!", level=Qgis.Info, duration=5)
         self.setupProgressTrackingWf(CountTasks.SIMPLE.value)
-        self.loadPhotosMetadataTask( altitudeAdjusterTerrainTask)
+        self.altitudeAdjusterTerrainTask()
+        #self.loadPhotosMetadataTask( altitudeAdjusterTerrainTask)
 
     def homepointCorrectionView(self ):
         ## Only test first image...
         if not self.photos[0].baroalt:
-            showBarometerAltNotFound(photos[0])
+            showBarometerAltNotFound(self.photos[0].path)
             return
 
         if not os.path.isfile(self.dem_path):
@@ -730,7 +722,7 @@ class VerticalPhotoPlacer:
                                                     duration=5)
                 self.alt_task = QgsTask.fromFunction('Adjust altitude based on home point',
                                                      altitudeAdjusterHome,
-                                                     params=[self.homepoint_alt, files, imgsmeta, self.dem_path],
+                                                     params=[self.homepoint_alt, self.photos, self.dem_path],
                                                      on_finished=self.createWorldfile)
                 self.alt_task.progressChanged.connect(lambda: self.dlg.progress_bar.setValue(
                     int(start_progress + self.alt_task.progress() / self.workflow_ntasks)))
@@ -745,7 +737,7 @@ class VerticalPhotoPlacer:
 #        if not Photo([photos[0]]).baroalt:
         #print(f"self.photos[0] {self.photos[0].__dict__}")
         if not self.photos[0].baroalt:
-            showBarometerAltNotFound()
+            showBarometerAltNotFound(self.photos[0].baroalt.path)
             return
 
         if self.alt_corval is None:
@@ -768,8 +760,9 @@ class VerticalPhotoPlacer:
                 self.progress_track.pop(0)
                 start_progress = self.progress_track[0]
 
-                files = list(result["files"])
-                imgsmeta = result["imgsmeta"]
+                #files = list(result["files"])
+                #imgsmeta = result["imgsmeta"]
+                
                 # if all conditions passed, proceed.
                 self.iface.messageBar().pushMessage("Notice",
                                                     "Altitude offset: {0} meters".format(self.alt_corval),
@@ -786,9 +779,11 @@ class VerticalPhotoPlacer:
                     int(start_progress + self.alt_task.progress() / self.workflow_ntasks)))
                 QgsApplication.taskManager().addTask(self.alt_task)
 
+
         # start from loading photos metadata
         self.iface.messageBar().pushMessage("Info", "Performs Adjacent photos matching and View!", level=Qgis.Info,
                                             duration=5)
+
         self.setupProgressTrackingWf(CountTasks.ADJMATCHING.value)
         self.loadPhotosMetadataTask(altitudeAdjusterAdjacentTask)
 
@@ -813,9 +808,10 @@ class VerticalPhotoPlacer:
 
             files = list(result["files"])
             imgsmeta = result["imgsmeta"]
+
             self.alt_task = QgsTask.fromFunction('Generate worldfile',
                                                  worldfilesGenerator,
-                                                 params=[files, imgsmeta, WORLD_EXT],
+                                                 params=[self.photos],
                                                  on_finished=self.onCreateWorldfileCompleted)
             self.alt_task.progressChanged.connect(lambda: self.dlg.progress_bar.setValue(
                 int(start_progress + self.alt_task.progress()/self.workflow_ntasks)))

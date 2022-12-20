@@ -35,6 +35,7 @@ import numpy as np
 
 from .utility import meter2Degree
 
+
 class AltitudeNotFound(Exception):
     pass
 
@@ -52,9 +53,7 @@ def worldfilesGenerator(task, params):
     :rtype: dict
     """
 
-    # files = params[0]
-    # imgsmeta = params[1]
-    # world_extension = params[2]
+
     
     photos = params[0]
     n_photos = len(photos)

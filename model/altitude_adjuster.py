@@ -161,13 +161,18 @@ def altitudeAdjusterAdjacent(task, params):
     :rtype: dict
     """
 
+    print("a")
     photos = params[0]
+    print("b")
     home_terrain_alt = params[1]
+    print("c")
     adj_terrain_alt_avg = params[2]
+    print("d")
     dsm = params[3]
+    print("e")
 
     task.setProgress(1)
-
+    print("glouglou")
     # correction
     n_photos = len(photos)
     processed_photos = []
@@ -190,10 +195,10 @@ def altitudeAdjusterAdjacent(task, params):
             processed_photos.append(photo)
         except Exception:
             continue
-
         task.setProgress(float((index + 1) / n_photos) * 100)
         if task.isCanceled():
             raise TaskCancelledByUser('Task cancelled!')
+    print("glagla")
 
     #processed_files = [photos[i] for i in processed_index]
     #imgs_spec = [imgs_spec[i] for i in processed_index]
