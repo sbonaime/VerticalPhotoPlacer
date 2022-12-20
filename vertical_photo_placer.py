@@ -588,8 +588,8 @@ class VerticalPhotoPlacer:
         # Get metadata and write worldfile for every photo if needed
         # il faudrait utiliser    def loadPhotosMetadataTask(self,  callback):
         #avec un callback ???
-        if not self.metadata_and_worldfile_done :
-            self.metadata_and_worldfile()
+        #if not self.metadata_and_worldfile_done :
+        #    self.metadata_and_worldfile()
 
 
 
@@ -625,7 +625,7 @@ class VerticalPhotoPlacer:
         start_progress = self.progress_track[0]
         self.alt_task = QgsTask.fromFunction('Load photos metadata',
                                              loadPhotosMetadata,
-                                             params=[self.photos_filenames],
+                                             params=[self.photos_filenames,self.photos,self.metadata_and_worldfile_done],
                                              on_finished=callback,
                                              flags=QgsTask.CanCancel)
         self.alt_task.progressChanged.connect(lambda: self.dlg.progress_bar.setValue(
@@ -634,12 +634,11 @@ class VerticalPhotoPlacer:
 
     def quickView(self):
         self.iface.messageBar().pushMessage("Info", "Performs quick view!", level=Qgis.Info, duration=5)
-
-        # 2 tasks to do for quickview ?
         self.setupProgressTrackingWf(CountTasks.QUICKVIEW.value)
-        inputs = {'task': None}
-        self.dlg.progress_bar.setValue(100)
-        self.onCreateWorldfileCompleted(exception=None, result=inputs)
+
+        # Get Metadata from photos
+        self.loadPhotosMetadataTask( self.createWorldfile)
+
 
 
     def metadata_and_worldfile(self):
@@ -689,7 +688,7 @@ class VerticalPhotoPlacer:
         self.iface.messageBar().pushMessage("Info", "Performs Simple correction and View!", level=Qgis.Info, duration=5)
         self.setupProgressTrackingWf(CountTasks.SIMPLE.value)
         self.altitudeAdjusterTerrainTask()
-        #self.loadPhotosMetadataTask( altitudeAdjusterTerrainTask)
+        self.loadPhotosMetadataTask( altitudeAdjusterTerrainTask)
 
     def homepointCorrectionView(self ):
         ## Only test first image...
@@ -736,8 +735,11 @@ class VerticalPhotoPlacer:
     def adjacentPhotoMatchingView(self ):
 #        if not Photo([photos[0]]).baroalt:
         #print(f"self.photos[0] {self.photos[0].__dict__}")
-        if not self.photos[0].baroalt:
-            showBarometerAltNotFound(self.photos[0].baroalt.path)
+#        if not self.photos[0].baroalt:
+        tmp_photo=Photo(self.photos_filenames[0])
+        tmp_photo.get_metadata()
+        if not tmp_photo.baroalt:
+            showBarometerAltNotFound(self.photos_filenames)
             return
 
         if self.alt_corval is None:
@@ -797,7 +799,6 @@ class VerticalPhotoPlacer:
             The default is None.
         :type result: dict
         """
-
         if exception:
             showDialog(window_title="Warning: Processing exited!",
                        dialog_text="{0}".format(str(exception)),
@@ -806,8 +807,8 @@ class VerticalPhotoPlacer:
             self.progress_track.pop(0)
             start_progress = self.progress_track[0]
 
-            files = list(result["files"])
-            imgsmeta = result["imgsmeta"]
+            #files = list(result["files"])
+            #imgsmeta = result["imgsmeta"]
 
             self.alt_task = QgsTask.fromFunction('Generate worldfile',
                                                  worldfilesGenerator,
@@ -817,7 +818,7 @@ class VerticalPhotoPlacer:
                 int(start_progress + self.alt_task.progress()/self.workflow_ntasks)))
             self.alt_task.taskTerminated.connect(lambda: self.dlg.progress_bar.reset())
             QgsApplication.taskManager().addTask(self.alt_task)
-
+        
     def onCreateWorldfileCompleted(self, exception, result=None):
         """Load layers.
 

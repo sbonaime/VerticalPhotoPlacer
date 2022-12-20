@@ -192,7 +192,7 @@ class Photo:
     Store frequently used metadata tags of a photo.
     """
     path: str 
-    image_width: int = None
+    imgpath_noext : str = None
     image_width: int = None
     image_height:  int = None
     focal_length: float = None
@@ -200,14 +200,22 @@ class Photo:
     gpslon: float = None
     gpsalt: float = None
     baroalt: float = None
+    groundalt: float = None
     heading: float = None
     cam_model: str = None
-    metadata: dict= field(default_factory=dict)
+    #metadata: dict= field(default_factory=dict)
+    sensor_width_decimal: float = None
+    sensor_height_decimal : float = None
+    sensor_width_degree: float = None
+    sensor_height_degree: float = None
+    sensor_width_decimal: float = None
+    sensor_height_decimal: float = None
+    rtk_metadata: dict= field(default_factory=dict)
 
     def __post_init__(self):
-        imgpath_noext, ext = splitext(self.path)
+        self.imgpath_noext, ext = splitext(self.path)
         ext=ext.lower()
-        self.worldfile_filename = f'{imgpath_noext}.{ext[1]}{ext[-1]}{WORLD_EXT}'
+        self.worldfile_filename = f'{self.imgpath_noext}.{ext[1]}{ext[-1]}{WORLD_EXT}'
 
 # {'SourceFile': '/Users/bonaime/Desktop/mayotte/100_0006_0199.JPG', 
 # 'ExifTool:ExifToolVersion': 12.5, 'ExifTool:Now': '2022:11:30 17:48:53+01:00',
@@ -324,7 +332,7 @@ class Photo:
             if 'EXIF:Model' in metadata:
                 self.cam_model =  str(metadata['EXIF:Model'])
 
-            self.metadata = metadata
+            #self.metadata = metadata
             self.sensor_width_decimal, self.sensor_height_decimal = getCamSensorSize(self.cam_model,self.image_width, self.image_height)
             self.sensor_width_degree, self.sensor_height_degree = meter2Degree(self.gpslat, self.sensor_width_decimal, self.sensor_height_decimal)
 
@@ -340,6 +348,13 @@ class Photo:
             #if not isfile(self.worldfile_filename ):
                 #print(f"Creating wordfile for {self.path}")
             createWorldfile(self)
+            #print(f'Photo creee :{self}')
+            
+    def debug(self,altitude):
+            print(f'{self.imgpath_noext} altitude {altitude} photo.sensor_width_decimal {self.sensor_width_decimal} photo.sensor_height_decimal {self.sensor_height_decimal}\
+            photo.focal_length {self.focal_length} photo.sensor_width_decimal {self.sensor_width_decimal}\
+            photo.sensor_height_decimal {self.sensor_height_decimal} photo.gpslat {self.gpslat} photo.gpslon{self.gpslon}\
+            photo.heading {self.heading} photo.worldfile_filename {self.worldfile_filename})')
 
     def getAltByPriority(self):
         """Get altitude value, priority: Ground Altitude > Barometer Altitude > GPS Altitude
@@ -362,164 +377,3 @@ class Photo:
 
 
 
-
-class ImageMetaStore:
-    """
-    Store frequently used metadata tags of a photo.
-    """
-
-    def __init__(self,path):
-
-        self.path=path
-        self.metadata = {}
-
-    def get_metadata(self):
-        with ExifTool() as et:
-            metadata = et.get_tags(TAGS, self.path)
-            # get_tags(self, tags, filename):
-            #print(f"metadata {metadata}")
-            self.image_width = int(metadata['File:ImageWidth'])
-            self.image_height = int(metadata['File:ImageHeight'])
-            self.focal_length = float(metadata['EXIF:FocalLength'])
-            
-            if metadata['EXIF:GPSLatitudeRef'] is not None and metadata['EXIF:GPSLongitudeRef']  is not None:
-                self.gpslat = refConversion(metadata['EXIF:GPSLatitude'], metadata['EXIF:GPSLatitudeRef'].lower())
-                self.gpslon = refConversion(metadata['EXIF:GPSLongitude'], metadata['EXIF:GPSLongitudeRef'].lower())
-            
-            print(f"self.gpslat {self.gpslat} self.gpslon {self.gpslon }")
-
-            self.gpsalt =float(metadata['EXIF:GPSAltitude'])
-            self.baroalt = float(metadata['XMP:RelativeAltitude'])
-            self.groundalt = float(metadata['XMP:GroundAltitude'])
-            self.heading = float(metadata['XMP:FlightYawDegree'])
-            self.cam_model = str(metadata['EXIF:Model'])
-
-            self.metadata = metadata
-#        metadata {'SourceFile': '/Users/bonaime/Desktop/mayotte/100_0006_0199.JPG', 
-# 'File:ImageWidth': 5472, 'File:ImageHeight': 3648, 'EXIF:FocalLength': 8.8, 
-# 'EXIF:GPSLatitude': 12.8001659444444, 'EXIF:GPSLatitudeRef': 'S', 'EXIF:GPSLongitude': 45.2874150833333,
-#  'EXIF:GPSLongitudeRef': 'E', 'EXIF:GPSAltitude': 10.712, 'XMP:RelativeAltitude': '+9.99', 
-#  'XMP:GroundAltitude': 12.09, 'XMP:FlightYawDegree': -80.5, 'EXIF:Model': 'FC6310R'}
-
-
-        # self._image_width = None if image_width is None else int(image_width)
-        # self._image_height = None if image_height is None else int(image_height)
-        # self._focal_length = None if focal_length is None else float(focal_length)
-        # self._gpslat = None if gpslat is None else float(gpslat)
-        # self._gpslon = None if gpslon is None else float(gpslon)
-        # self._gpsalt = None if gpsalt is None else float(gpsalt)
-        # self._baroalt = None if baroalt is None else float(baroalt)
-        # self._groundalt = None if groundalt is None else float(groundalt)
-        # self._heading = None if heading is None else float(heading)
-        # self._cam_model = None if cam_model is None else str(cam_model)
-
-
-
-
-
-class ProcessMetadata:
-    def __init__(self, photos):
-
-        self.iw = "file:imagewidth"
-        self.ih = "file:imageheight"
-        self.fl = "exif:focallength"
-        self.gpslat = "exif:gpslatitude"
-        self.gpslat_ref = "exif:gpslatituderef"
-        self.gpslon = "exif:gpslongitude"
-        self.gpslon_ref = "exif:gpslongituderef"
-        self.gpsalt = "exif:gpsaltitude"
-        self.baroalt = "xmp:relativealtitude"
-        self.groundalt = "xmp:groundaltitude"
-        self.heading = "xmp:flightyawdegree"  # "xmp:gimbalyawdegree"
-        self.cam_model = "exif:model"
-        self.photos = []
-
-        tags = [self.iw, self.ih, self.fl,
-                self.gpslat, self.gpslat_ref, self.gpslon,
-                self.gpslon_ref, self.gpsalt, self.baroalt,
-                self.groundalt, self.heading, self.cam_model]
-
-        for filename in photos:
-            temp_photo =ImageMetaStore(path=filename)
-            temp_photo.get_metadata()
-            #print(f"Metadata of {filename} is {temp_photo.metadata}")
-            self.photos.append(temp_photo)
-
-
-
-        metadata = None
-        with ExifTool() as et:
-            metadata = et.get_tags_batch(TAGS, photos)
-            metadata = [{k.lower(): v for k, v in d.items()} for d in metadata]
-        
-        self.metadata = metadata
-        
-    def filterTagFromIndex(self, idx, tag):
-        """Get tag value for a single photo, search based on index."""
-        try:
-            return self.metadata[idx][tag]
-        except Exception:
-            return None
-        
-    def hasBaroAltitude(self):
-        """Check for barometer altitude existence of the first photo"""
-        try:
-            baroalt = self.filterTagFromIndex(0, self.baroalt)
-            if baroalt:
-                return True
-            else:
-                return False
-        except Exception:
-            return False
-
-    def getTagsByImgindex(self, idx):
-        """Get tags of an photo which is identified by its index position in photo list.
-
-        :param idx: index of the photo in the photo list.
-        :type idx: int
-
-        :return: tags value for the photo or None if error occurred.
-        :rtype: ImageMetaStore or None
-        """
-
-        try:
-            # latitude and longitude needs to be in global reference
-            latref = self.filterTagFromIndex(idx, self.gpslat_ref)
-            lonref = self.filterTagFromIndex(idx, self.gpslon_ref)
-            lat = self.filterTagFromIndex(idx, self.gpslat)
-            lon = self.filterTagFromIndex(idx, self.gpslon)
-            if latref is not None and lonref is not None:
-                lat = refConversion(lat, latref.lower())
-                lon = refConversion(lon, lonref.lower())
-
-            tags_data = {
-                'image_width': self.filterTagFromIndex(idx, self.iw),
-                'image_height': self.filterTagFromIndex(idx, self.ih),
-                'focal_length': self.filterTagFromIndex(idx, self.fl) / 1000,
-                'gpslat': lat,
-                'gpslon': lon,
-                'gpsalt': self.filterTagFromIndex(idx, self.gpsalt),
-                'baroalt': self.filterTagFromIndex(idx, self.baroalt),
-                'groundalt': self.filterTagFromIndex(idx, self.groundalt),
-                'heading': self.filterTagFromIndex(idx, self.heading),
-                'cam_model': self.filterTagFromIndex(idx, self.cam_model),
-            }
-
-            img_meta = ImageMetaStore(**tags_data)
-            return img_meta
-
-        except Exception:
-            return None
-
-    def getTagsAllImgs(self):
-        """Get tags for all photos.
-
-        :return: list of ImageMetaStore instances.
-        :rtype: list
-        """
-        print
-        #imgsmeta = [self.getTagsByImgindex(i) for i in range(len(self.metadata))]
-        #print(f"imgsmeta {imgsmeta}")
-        print(f"self.photos {self.photos}")
-        
-        return self.photos

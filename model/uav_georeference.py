@@ -54,34 +54,29 @@ def worldfilesGenerator(task, params):
     """
 
 
-    
+    print("worldfilesGenerator")
     photos = params[0]
     n_photos = len(photos)
     task.setProgress(1)
 
     # start creation of worldfiles
     loaded_files = list()
-    n_processed = 0
 
-    for photo in photo:
-
+    for n_processed, photo in enumerate(photos):
         try:
+            
             altitude = photo.getAltByPriority()
-     
-            
-            
-            imgpath_noext, ext = splitext(photo.imgpath)
-            worldfile = imgpath_noext + ".{0}{1}{2}".format(ext[1], ext[-1], "w").lower()
+            photo.debug(altitude)
             createSingleWorldfile(photo.sensor_width_decimal, photo.sensor_height_decimal,
-                                  photo.focal_length, photo.sensor_width, photo.sensor_height,
+                                  photo.focal_length, photo.sensor_width_decimal, photo.sensor_height_decimal,
                                   photo.gpslat, photo.gpslon, altitude,
-                                  photo.heading, worldfile)
+                                  photo.heading, photo.worldfile_filename)
             loaded_files.append(photo)
         except Exception:
+            print(f'Erreur avec {photo.path}\n {photo}')
             continue
 
-        n_processed = n_processed + 1
-        percent = float(n_processed / n_photos) * 100
+        percent = n_processed * 100 / n_photos 
         task.setProgress(percent)
         if task.isCanceled():
             raise Exception('Task canceled!')
@@ -91,7 +86,8 @@ def worldfilesGenerator(task, params):
                       "1. The photos does not contain heading and altitude information.\n"
                       "2. The camera sensor is not supported. \n"
                       "In case 2, please try to insert sensor name, width and height to the camlist.xml")
-
+    
+    print("end worldfilesGenerator")
     return {'files': loaded_files, 'task': task.description()}
 
 

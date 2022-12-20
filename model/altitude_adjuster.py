@@ -84,20 +84,29 @@ def loadPhotosMetadata(task, params):
     :rtype: dict
     """
 
-    photos_list = []
     photos_filenames = params[0]
+    photos = params[1]
+    metadata_and_worldfile_done = params[2]
 
     task.setProgress(1)
+    
+    if metadata_and_worldfile_done :
+        task.setProgress(100)
+        return
+    else :
+        for index, photo_filename in enumerate(photos_filenames):
+            temp_photo = Photo(photo_filename)
+            # Get metadata and create Worlfile
+            temp_photo.get_metadata()
+            photos.append(temp_photo)
+            task.setProgress(index*100/len(photos_filenames))
 
-    for photo_filename in photos_filenames:
-        photos_list.append(Photo(photo_filename))
-    #imgsmeta = ProcessMetadata(photos).getTagsAllImgs()
+        metadata_and_worldfile_done = True
 
-    task.setProgress(100)
     if task.isCanceled():
         raise TaskCancelledByUser('Task cancelled!')
 
-    return {'photos':processed_photos, 'task': task.description()}
+    return {'photos':photos, 'task': task.description()}
 
 
 def altitudeAdjusterTerrain(task, params):
@@ -139,7 +148,7 @@ def altitudeAdjusterTerrain(task, params):
             raise TaskCancelledByUser('Task cancelled!')
 
 
-    updateTagswithExiftool(dirname(photos[0]), processed_photos)
+    #updateTagswithExiftool(dirname(photos[0].path), processed_photos)
 
     return {'photos':processed_photos, 'task': task.description()}
 
@@ -161,22 +170,16 @@ def altitudeAdjusterAdjacent(task, params):
     :rtype: dict
     """
 
-    print("a")
     photos = params[0]
-    print("b")
     home_terrain_alt = params[1]
-    print("c")
     adj_terrain_alt_avg = params[2]
-    print("d")
     dsm = params[3]
-    print("e")
 
     task.setProgress(1)
-    print("glouglou")
     # correction
     n_photos = len(photos)
     processed_photos = []
-    
+
     for index, photo in enumerate(photos):
         try:
             # if there is barometer altitude, correction is possible
@@ -198,11 +201,10 @@ def altitudeAdjusterAdjacent(task, params):
         task.setProgress(float((index + 1) / n_photos) * 100)
         if task.isCanceled():
             raise TaskCancelledByUser('Task cancelled!')
-    print("glagla")
 
     #processed_files = [photos[i] for i in processed_index]
     #imgs_spec = [imgs_spec[i] for i in processed_index]
-    updateTagswithExiftool(dirname(photos[0]), processed_photos)
+    #updateTagswithExiftool(dirname(photos[0].path), processed_photos)
 
     return {'photos':processed_photos, 'task': task.description()}
 
@@ -260,7 +262,7 @@ def altitudeAdjusterAdjacent_ori(task, params):
             raise TaskCancelledByUser('Task cancelled!')
 
 
-    updateTagswithExiftool(dirname(photos[0]), processed_photos)
+    #updateTagswithExiftool(dirname(photos[0].path), processed_photos)
 
     return {'photos':processed_photos, 'task': task.description()}
 
@@ -308,6 +310,6 @@ def altitudeAdjusterHome(task, params):
             raise TaskCancelledByUser('Task cancelled!')
 
 
-    updateTagswithExiftool(dirname(photos[0]), processed_photos)
+    #updateTagswithExiftool(dirname(photos[0].path), processed_photos)
 
     return {'photos':processed_photos, 'task': task.description()}
